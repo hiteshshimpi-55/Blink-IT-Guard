@@ -1,13 +1,14 @@
-import { NextFunction } from 'express';
-import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import bcrypt from 'bcrypt';
 dotenv.config();
 import path from 'path';
 
 const accessSecret = process.env.ACCESS_SECRET;
 
 const refreshSecret = process.env.REFRESH_SECRET;
+
+const saltRounds = 10;
 
 function generateToken(user:any,isAccess:boolean):string{
     
@@ -24,7 +25,6 @@ function authenticateToken(token:string,isAccess:boolean): boolean{
     const secret = isAccess ? accessSecret : refreshSecret;
     try{
         const user = jwt.verify(token,secret);
-        console.log(user);
         return true;
     }catch(err){
         return false;
@@ -36,8 +36,20 @@ function allowedFiles(filename:string):boolean{
     return ['.png','.jpg','.jpeg','.gif'].includes(ext);
 }
 
+async function hashedPassword(password:string): Promise<string>{
+    const result = await bcrypt.hash(password,saltRounds);
+    return result;
+}
+
+async function comparePassword(password:string,hash:string):Promise<boolean>{
+    const result = await bcrypt.compare(password,hash);
+    return result;
+}
+
 export default{
     generateToken,
     authenticateToken,
-    allowedFiles
+    allowedFiles,
+    hashedPassword,
+    comparePassword
 }

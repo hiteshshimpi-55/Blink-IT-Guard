@@ -7,9 +7,6 @@ dotenv.config();
 
 const app: Express = express();
 
-
-console.log(`Environments: ${process.env.ACCESS_SECRET}`)
-
 app.use(express.json());
 
 app.use("/api/v1/",route);
