@@ -1,137 +1,185 @@
-import { Request,Response } from "express";
-import utility from "./utils";
-import db  from "./db";
+import { Request, Response } from "express";
+import hfunction from "./hFunctions";
+import utils from "./utils";
+import path from "path";
+import hFunctions from "./hFunctions";
+
+interface MulterRequest extends Request {
+  file: any;
+}
 
 const signup = async (req: Request, res: Response) => {
-    const {
-        user_id,
-        password,
-        email
-    } = req.body;
+  const { user_id, password, email } = req.body;
 
-    try {
-        // Check if the user already exists in the database
-        const existingUser = await getUserById(user_id);
-        if (existingUser) {
-            return res.status(400).send({
-                message: "User already exists"
-            });
-        }
-
-        // Hash the password
-        const hashedPassword = await utility.hashedPassword(password);
-
-        // Create a new user in the database
-        await createUser(user_id, hashedPassword, email);
-
-        // Generate access and refresh tokens
-        const accessToken = utility.generateToken({ user_id }, true);
-        const refreshToken = utility.generateToken({ user_id }, false);
-
-        res.status(200).send({
-            message: "User signed up successfully",
-            data: {
-                accessToken,
-                refreshToken
-            }
-        });
-    } catch (error) {
-        console.error("Error signing up user:", error);
-        res.status(500).send({
-            message: "Internal server error"
-        });
+  try {
+    // Check if the user already exists in the database
+    const existingUser = await hfunction.getUserById(user_id);
+    if (existingUser) {
+      return res.status(400).send({
+        message: "User already exists",
+      });
     }
-};
 
-const loginUser = async (req: Request, res: Response)=>{
-    const {
-        user_id,
-        password,
-    } = req.body;
+    // Hash the password
+    const hashedPassword = await hfunction.hashedPassword(password);
 
+    // Create a new user in the database
+    await hfunction.createUser(user_id, hashedPassword, email);
 
-    // read from table to compare password. The password is hashed and so should be decrypted
-
-    const accessToken = utility.generateToken({user_id},true);
-    const refreshToken = utility.generateToken({user_id},false);
+    // Generate access and refresh tokens
+    const accessToken = hfunction.generateToken({ user_id }, true);
+    const refreshToken = hfunction.generateToken({ user_id }, false);
 
     res.status(200).send({
-        message: "User logged in successfully",
-        data: {
-            accessToken,
-            refreshToken
-        }
+      message: "User signed up successfully",
+      data: {
+        accessToken,
+        refreshToken,
+      },
     });
-}
+  } catch (error) {
+    console.error("Error signing up user:", error);
+    res.status(500).send({
+      message: "Internal server error",
+    });
+  }
+};
 
+const loginUser = async (req: Request, res: Response) => {
+  const { user_id, password } = req.body;
 
-const getRefreshToken = async(req:Request, res:Response) => {
-    const {
-        refreshToken
-    } = req.body;
+  try {
+    const user = await hfunction.getUserById(user_id);
 
-    const isAuth = utility.authenticateToken(refreshToken,false);
-    if(isAuth){
-        const accessToken = utility.generateToken({user_id: "user_id"},true);
-        res.status(200).send({
-            message: "User is authenticated",
-            data: {
-                accessToken
-            }
-        });
-    }else{
-        res.status(403).send({
-            message: "User is not authenticated",
-        });
+    if (!user) {
+      return res.status(401).send({ message: "Invalid user credentials" });
     }
-}
-const getUser = async(req:Request,res:Response)=>{
-    const header = req.headers['authorization'];
-    const token = header.split(' ')[1];
+
+    const isPasswordValid = await hfunction.comparePassword(
+      password,
+      user.password
+    );
+
+    if (!isPasswordValid) {
+      return res.status(401).send({ message: "Invalid user credentials" });
+    }
+
+    const accessToken = hfunction.generateToken({ user_id }, true);
+    const refreshToken = hfunction.generateToken({ user_id }, false);
+
+    res.status(200).send({
+      message: "User logged in successfully",
+      data: {
+        accessToken,
+        refreshToken,
+      },
+    });
+  } catch (error) {
+    console.error("Error logging in user:", error);
+    res.status(500).send({
+      message: "Internal server error",
+    });
+  }
+};
+
+const getUser = async (req: Request, res: Response) => {
+  try {
+    const header = req.headers["authorization"];
+    const token = header.split(" ")[1];
     console.log(`token received : ${token}`);
-    const isAuth = utility.authenticateToken(token,true);
-    if(isAuth){
-        res.status(200).send({
-            message: "User is authenticated",
+
+    const userId = hfunction.authenticateToken(token, true);
+
+    if (userId) {
+      const user = await hfunction.getUserById(userId);
+      if (!user) {
+        return res.status(404).send({
+          message: "User not found",
         });
-    }else{
-        res.status(403).send({
-            message: "User is not authenticated",
-        });
+      }
+
+      res.status(200).send({
+        message: "User is authenticated",
+        data: {
+          user,
+        },
+      });
+    } else {
+      res.status(403).send({
+        message: "User is not authenticated",
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching user:", error);
+    res.status(500).send({
+      message: "Internal server error",
+    });
+  }
+};
+
+const getRefreshToken = async (req: Request, res: Response) => {
+  const { refreshToken } = req.body;
+
+  const isAuth = hfunction.authenticateToken(refreshToken, false);
+  if (isAuth) {
+    const accessToken = hfunction.generateToken({ user_id: "user_id" }, true);
+    res.status(200).send({
+      message: "User is authenticated",
+      data: {
+        accessToken,
+      },
+    });
+  } else {
+    res.status(403).send({
+      message: "User is not authenticated",
+    });
+  }
+};
+
+const uploadImage = async (req: Request, res: Response) => {
+  try {
+    const documentFile = (req as MulterRequest).file;
+    const header = req.headers["authorization"];
+    const token = header.split(" ")[1];
+    console.log(`token received : ${token}`);
+
+    const user = await hfunction.authenticateToken(token, true);
+    if (!user) {
+      return res.status(403).json({ error: "User not authenticated" });
     }
 
-}
+    if (!documentFile) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
 
+    if (!hFunctions.allowedFiles(documentFile.originalname)) {
+      return res.status(400).json({ error: "File type not allowed" });
+    }
 
-async function getUserById(user_id: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-        db.get("SELECT * FROM users WHERE user_id = ?", [user_id], (err, row) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(row);
-            }
-        });
+    const tempPath = documentFile.path;
+    const targetPath = path.join(
+      __dirname,
+      "images/",
+      documentFile.originalname
+    );
+
+    utils.fs.rename(tempPath, targetPath, (err) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+      res.json({ message: "File uploaded successfully" });
     });
-}
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
 
-async function createUser(user_id: string, password: string, email: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-        db.run("INSERT INTO users (user_id, password, email) VALUES (?, ?, ?)",
-            [user_id, password, email],
-            (err) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve();
-                }
-            });
-    });
-}
-
-export default{
-    signup,
-    loginUser,
-    getRefreshToken,
-    getUser
+export default {
+  signup,
+  loginUser,
+  getRefreshToken,
+  getUser,
+  uploadImage,
 };
