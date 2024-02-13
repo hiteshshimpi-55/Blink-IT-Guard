@@ -101,7 +101,9 @@ const getUser = async (req: Request, res: Response) => {
       res.status(200).send({
         message: "User is authenticated",
         data: {
-          user,
+          id: user["id"],
+          user_id: user["user_id"],
+          email: user["email"],
         },
       });
     } else {
@@ -168,7 +170,12 @@ const uploadImage = async (req: Request, res: Response) => {
         console.error(err);
         return res.status(500).json({ error: "Internal server error" });
       }
-      res.json({ message: "File uploaded successfully" });
+      res.json({
+        message: "File uploaded successfully",
+        data: {
+          path: targetPath,
+        },
+      });
     });
   } catch (error) {
     console.error(error);
